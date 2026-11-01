@@ -44,18 +44,30 @@ function stripQuoted(command: string): string {
   return command.replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g, ' "" ');
 }
 
-// (segment splitting lives inline in classifyShell: verb matching runs on
-// stripped text, the $? scan on raw text — one splitter, two views)
+// (segment splitting lives inline in classifyShell: one splitter, two views)
 
 export function classifyShell(command: string): ShellIssue[] {
   if (!command || command.includes(ESCAPE_MARKER)) return [];
   const issues: ShellIssue[] = [];
   const bare = stripQuoted(command);
 
+  // One split, two views (FR-9): verb matching runs on stripped segments,
+  // the $? scan on raw segments (a quoted `"rc=$?"` is still a late read).
+  const splitter = /\n*(?:&&|\|\||;|\n)\s*/;
+  const segsStripped = bare.split(splitter).filter((s) => s.length > 0);
+  const segsRaw = command.split(splitter).filter((s) => s.length > 0);
+
   // P1 pipe-loss: state-changing git verb piped into a consumer — the
   // pipeline's exit code is the consumer's (0), the verb's failure vanishes.
+  // Both the verb and the pipe must live in the SAME segment: a read-only
+  // pipe in a later segment must not resurrect an earlier segment's verb.
   if (STATE_CHANGING_GIT.test(bare)) {
-    if (/\bgit\s(?:[^|;&\n]|&(?!&))*\|\s*(?:2>&1\s*)?(?:tail|head|grep|egrep|fgrep|sed|awk|cat|less|more|jq|cut|sort|uniq|wc|tee)\b/.test(bare)) {
+    const pipesInSameSegment = segsStripped.some(
+      (seg) =>
+        STATE_CHANGING_GIT.test(seg) &&
+        /\bgit\s(?:[^|;&\n]|&(?!&))*\|\s*(?:2>&1\s*)?(?:tail|head|grep|egrep|fgrep|sed|awk|cat|less|more|jq|cut|sort|uniq|wc|tee)\b/.test(seg),
+    );
+    if (pipesInSameSegment) {
       issues.push({
         kind: "pipe-loss",
         detail:
@@ -64,6 +76,8 @@ export function classifyShell(command: string): ShellIssue[] {
     }
 
     // P2 swallow: failure replaced by true (same read-only tag exemption).
+    // Segment-safe by construction: the verb→`|| true` stretch excludes
+    // ; & | so the pattern cannot bind across segment boundaries.
     if (SWALLOW_GIT.test(bare)) {
       issues.push({
         kind: "swallow",
@@ -72,11 +86,6 @@ export function classifyShell(command: string): ShellIssue[] {
     }
 
     // P3 late-read: $?, captured only after an intervening command clobbered it.
-    // Verb matching uses stripped segments; the $? scan uses the RAW segments
-    // (a quoted `"rc=$?"` is still a late read).
-    const splitter = /\n*(?:&&|\|\||;|\n)\s*/;
-    const segsStripped = stripQuoted(command).split(splitter).filter((s) => s.length > 0);
-    const segsRaw = command.split(splitter).filter((s) => s.length > 0);
     for (let i = 0; i < segsStripped.length && i < segsRaw.length; i++) {
       if (!STATE_CHANGING_GIT.test(segsStripped[i])) continue;
       const next = segsStripped[i + 1] ?? "";

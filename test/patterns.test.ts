@@ -66,6 +66,31 @@ test("canonical immediate capture passes", () => {
   assert.deepEqual(kinds('git commit -q -m x && echo committed'), []);
 });
 
+// FR-9: P1 pipe-loss must not conflate verbs across segments.
+test("pipe-loss: state-changing verb in one segment, read-only pipe in a later segment passes (FR-9)", () => {
+  assert.deepEqual(
+    kinds("git push origin main; rc=$?; remote=$(git ls-remote origin refs/heads/main | cut -f1)"),
+    [],
+  );
+  assert.deepEqual(kinds("git commit -m x; git log --oneline | head -20"), []);
+});
+
+test("pipe-loss: verb and consumer pipe in the SAME segment still flagged (FR-9)", () => {
+  assert.ok(kinds("git push origin main | tail -1").includes("pipe-loss"));
+  assert.ok(kinds("rc=$?; git push origin main | tail -1").includes("pipe-loss"));
+  assert.ok(kinds("git push origin main | tail -1; rc=$?").includes("pipe-loss"));
+});
+
+// FR-9 pin: SWALLOW_GIT's char class cannot cross ; && || so `|| true`
+// after an unrelated later segment must not fire on an earlier git verb.
+test("swallow: || true cannot bind across segment boundaries (FR-9 pin)", () => {
+  assert.deepEqual(kinds("git push -q origin main; mkdir -p out || true"), []);
+  assert.deepEqual(kinds("git push -q origin main && mkdir -p out || true"), []);
+  assert.deepEqual(kinds("git push -q origin main\nmkdir -p out || true"), []);
+  // same-segment swallow still flagged
+  assert.ok(kinds("git push -q origin main || true").includes("swallow"));
+});
+
 test("escape marker suppresses", () => {
   assert.deepEqual(kinds("git push origin main 2>&1 | tail -5 # ok-piped-git"), []);
 });
