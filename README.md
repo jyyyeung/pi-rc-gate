@@ -165,7 +165,7 @@ prose as a claim rather than evidence.
 | Requirement | Needed for | If missing |
 |---|---|---|
 | pi ≥ 1.3 | the runtime warn layer | the extension does not load; the script and skill still work |
-| Node ≥ 20 | the runtime warn layer | same |
+| Node ≥ 20 (22.6+ to run the tests) | the runtime warn layer | same |
 | bash 3.2+ (any macOS/Linux shell) | `scripts/rc-gate.sh` | — |
 
 No network access, no telemetry, no runtime dependencies beyond pi's own
