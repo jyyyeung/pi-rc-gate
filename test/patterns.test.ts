@@ -104,3 +104,40 @@ test("no issues on empty/plain commands", () => {
   assert.deepEqual(kinds("echo hello"), []);
   assert.deepEqual(kinds("git status"), []);
 });
+
+test("read-only verb forms are exempt: stash list/show, apply --check, --dry-run, clean -n", () => {
+  assert.deepEqual(kinds("git stash list | head"), []);
+  assert.deepEqual(kinds("git stash show -p | cat"), []);
+  assert.deepEqual(kinds("git apply --check patch.diff | cat"), []);
+  assert.deepEqual(kinds("git apply -v --check p.diff | cat"), []);
+  assert.deepEqual(kinds("git commit --dry-run | cat"), []);
+  assert.deepEqual(kinds("git push --dry-run origin main | tail -3"), []);
+  assert.deepEqual(kinds("git clean -nd | head"), []);
+  assert.deepEqual(kinds("git clean -nfd | cat"), []);
+  assert.deepEqual(kinds("git clean --dry-run | cat"), []);
+});
+
+test("state-changing forms of the same verbs still fire (no over-exemption)", () => {
+  assert.ok(kinds("git stash | cat").includes("pipe-loss")); // bare stash = push
+  assert.ok(kinds("git stash pop | cat").includes("pipe-loss"));
+  assert.ok(kinds("git apply p.diff | cat").includes("pipe-loss"));
+  assert.ok(kinds("git commit -m x | cat").includes("pipe-loss"));
+  assert.ok(kinds("git push origin main | tail").includes("pipe-loss"));
+  // clean has no --dry-run alias for -f: -f wins, so this destroys work
+  assert.ok(kinds("git clean -fd | cat").includes("pipe-loss"));
+  // `git checkout --dry-run` does not exist in git: the command fails, and the
+  // lost rc is exactly the failure this gate exists to surface.
+  assert.ok(kinds("git checkout --dry-run . | cat").includes("pipe-loss"));
+});
+
+test("swallow: read-only forms exempt there too", () => {
+  assert.deepEqual(kinds("git stash list || true"), []);
+  assert.deepEqual(kinds("git commit --dry-run || true"), []);
+  assert.ok(kinds("git stash push || true").includes("swallow"));
+});
+
+test("powershell pipeline consumers are recognized (Windows)", () => {
+  assert.ok(kinds("git push origin main | Select-Object -Last 5").includes("pipe-loss"));
+  assert.ok(kinds("git push origin main | select -last 5").includes("pipe-loss"));
+  assert.ok(kinds("git commit -m x | Out-String").includes("pipe-loss"));
+});

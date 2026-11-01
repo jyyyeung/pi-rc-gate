@@ -1,9 +1,9 @@
 {
   "name": "pi-rc-gate",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "license": "MIT",
-  "description": "Exit-code honesty for coding agents: warns when piped git verbs, || true swallows, or late $? reads would let a failed command be reported as success — plus a static shell lint and a verification-before-claiming skill.",
+  "description": "Exit-code honesty for coding agents: warns when piped git verbs, || true swallows, or late $? reads would let a failed command be reported as success \u2014 plus a static shell lint and a verification-before-claiming skill.",
   "keywords": [
     "pi-package",
     "pi-extension",
@@ -19,8 +19,12 @@
     "url": "git+ssh://git@github.com/jyyyeung/pi-rc-gate.git"
   },
   "pi": {
-    "extensions": ["./extensions/rc-gate.ts"],
-    "skills": ["./skills/rc-gate"]
+    "extensions": [
+      "./extensions/rc-gate.ts"
+    ],
+    "skills": [
+      "./skills/rc-gate"
+    ]
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*"

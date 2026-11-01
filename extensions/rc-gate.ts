@@ -20,7 +20,10 @@ export default function rcGateExtension(pi: ExtensionAPI): void {
 
   pi.on("tool_call", async (event) => {
     const toolName: string = (event as { toolName?: string }).toolName ?? "";
-    if (toolName !== "bash" && toolName !== "bash-in") return;
+    // `powershell` is a separate tool with the same {command} input shape on
+    // Windows; the classifier's consumer list carries the PS aliases, so the
+    // same gate applies.
+    if (toolName !== "bash" && toolName !== "bash-in" && toolName !== "powershell") return;
     const input = ((event as { input?: unknown }).input ?? {}) as Record<string, unknown>;
     const command = typeof input.command === "string" ? input.command : "";
     const issues = classifyShell(command);

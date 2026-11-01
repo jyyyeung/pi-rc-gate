@@ -20,8 +20,8 @@ reports results — the timing that breaks the false-green habit.
 
 | Layer | Behavior |
 |---|---|
-| **Runtime warn (extension)** | On `bash` tool calls: flags state-changing git verbs piped into consumers (`tail`/`head`/`grep`/…), `\|\| true` swallows, and late `$?` reads (captured only after intervening commands clobbered it). Warn-only, one steer per issue kind per session. |
-| **Static lint (`scripts/rc-gate.sh`)** | Same classes over shell files — pre-commit/CI. No args = staged `*.sh` via git. Exit 1 on findings. |
+| **Runtime warn (extension)** | On `bash` and `powershell` tool calls: flags state-changing git verbs piped into consumers (`tail`/`head`/`grep`/…, `Select-Object`/`Out-String`/… on Windows), `\|\| true` swallows, and late `$?` reads (captured only after intervening commands clobbered it). Warn-only, one steer per issue kind per session. |
+| **Static lint (`scripts/rc-gate.sh`)** | Same classes over shell files — pre-commit/CI. No args = staged `*.sh` via git. Runs on stock macOS bash 3.2. Exit **0** clean, **1** findings, **2** usage/no-git/no-such-file, **3** internal error — a broken linter is never reported as a dirty script. |
 | **Skill** | The protocol behind the warnings: capture rc before any other statement; verify claimed effects on disk (`git ls-remote` after push, `git log -1` after commit, read files back); treat child-agent prose as claims, not evidence. |
 
 ```bash
@@ -41,6 +41,25 @@ git push -q origin main; rc=$?; echo "push rc=$rc"
 
 Between the command and `$?` there must be **nothing** — one `echo` in
 between and `$?` holds the echo's status.
+
+### What is *not* flagged
+
+A warn-layer only survives if it stays quiet on commands whose exit code
+cannot lie. These are deliberately exempt (the same table drives the pipe and
+the swallow check, and `scripts/rc-gate.sh` mirrors it):
+
+| Read-only form | Why exempt |
+|---|---|
+| `git tag`, `git tag -l/-n/--contains/--points-at/--format=/…` | lists refs |
+| `git stash list`, `git stash show` | reads |
+| `git apply --check/--stat/--numstat/--summary` | inspects a patch |
+| `git commit --dry-run`, `git push --dry-run` | reports, sends nothing |
+| `git clean -n`, `git clean -nd`, `git clean --dry-run` | lists |
+
+The state-changing spelling of the same verb still fires: `git stash` (bare =
+push), `git stash pop`, `git apply p.diff`, `git clean -fd`. And
+`git checkout --dry-run` fires too — that flag does not exist in git, so the
+command fails, which is precisely the rc you need to see.
 
 ### Pre-commit wiring
 

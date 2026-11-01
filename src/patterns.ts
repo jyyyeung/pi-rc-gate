@@ -18,15 +18,65 @@
  *  STATE_CHANGING_GIT and SWALLOW_GIT. */
 const READONLY_TAG_TAIL = String.raw`tag\b(?!\s*(?:$|[|;&])|\s+(?:-l\b|-n\d*\b|--list\b|--contains\b|--points-at\b|--merged\b|--no-merged\b|--column\b|--color\b|--(?:format|sort)=))`;
 
+/** Read-only `git stash` forms (list/show): they only read, so a lost exit
+ *  code cannot fake a green write. Bare `git stash` is the push shorthand and
+ *  still counts as state-changing, so unlike the tag tail this lookahead does
+ *  not exempt an empty tail. */
+const READONLY_STASH_TAIL = String.raw`stash\b(?!\s+(?:list|show)\b)`;
+
+/** Read-only `git apply` forms: --check/--stat/--numstat/--summary inspect a
+ *  patch without touching the worktree. */
+const READONLY_APPLY_TAIL = String.raw`apply\b(?!\s+(?:-\w+\s+)*--(?:check|stat|numstat|summary)\b)`;
+
+/** Read-only `git commit`/`git push` dry runs: they report, they do not write.
+ *  Only flags git actually supports are exempted — `git checkout --dry-run`
+ *  does not exist, so it stays flagged: the command genuinely fails, which is
+ *  exactly when its rc must not be lost. */
+const READONLY_COMMIT_TAIL = String.raw`commit\b(?!\s+(?:-\w+\s+)*--dry-run\b)`;
+const READONLY_PUSH_TAIL = String.raw`push\b(?!\s+(?:-\w+\s+)*--dry-run\b)`;
+
+/** Read-only `git clean` forms (-n/--dry-run, in any short-flag cluster such as
+ *  -nd). `git clean -fd | cat` destroying untracked work is a false-green
+ *  classic, so the verb is in scope; the dry run is not. */
+const READONLY_CLEAN_TAIL = String.raw`clean\b(?!\s+(?:-\w+\s+)*--dry-run\b)(?!\s+(?:-\w+\s+)*-\w*n\w*\b)`;
+
+/** The verb alternation shared by every pattern below, so a read-only
+ *  exemption can never drift between the pipe and the swallow check. */
+const VERBS = [
+  READONLY_PUSH_TAIL,
+  READONLY_COMMIT_TAIL,
+  String.raw`merge(?!-(?:base|ours|theirs|file))\b`,
+  String.raw`rebase\b`,
+  String.raw`reset\b`,
+  String.raw`checkout\b`,
+  String.raw`switch\b`,
+  READONLY_STASH_TAIL,
+  String.raw`pull\b`,
+  READONLY_TAG_TAIL,
+  String.raw`cherry-pick\b`,
+  String.raw`revert\b`,
+  READONLY_APPLY_TAIL,
+  String.raw`am\b`,
+  String.raw`worktree\s+(?:add|remove)\b`,
+  String.raw`branch\s+-\w*[Dd]\b`,
+  READONLY_CLEAN_TAIL,
+].join("|");
+
 /** State-changing git verbs whose failure MUST reach the caller. */
 export const STATE_CHANGING_GIT = new RegExp(
-  String.raw`\bgit\s+(?:-{1,2}[\w-]+(?:\s+"[^"]*"|\s+'[^']*'|\s+\S+)?\s+)*(?:push\b|commit\b|merge(?!-(?:base|ours|theirs|file))\b|rebase\b|reset\b|checkout\b|switch\b|stash\b|pull\b|${READONLY_TAG_TAIL}|cherry-pick\b|revert\b|apply\b|am\b|worktree\s+(?:add|remove)\b|branch\s+-\w*[Dd]\b)`,
+  String.raw`\bgit\s+(?:-{1,2}[\w-]+(?:\s+"[^"]*"|\s+'[^']*'|\s+\S+)?\s+)*(?:${VERBS})`,
 );
 
 /** `|| true`/`|| :` swallowing one of the state-changing verbs (P2). */
 const SWALLOW_GIT = new RegExp(
-  String.raw`\bgit\s(?:[^|;&\n]|&(?!&))*(?:push|commit|merge|rebase|reset|stash|pull|${READONLY_TAG_TAIL}|cherry-pick|revert|apply)\b(?:[^|;&\n]|&(?!&))*\|\|\s*(?:true\b|:)`,
+  String.raw`\bgit\s(?:[^|;&\n]|&(?!&))*(?:${VERBS})(?:[^|;&\n]|&(?!&))*\|\|\s*(?:true\b|:)`,
 );
+
+/** Pipeline consumers that turn the pipeline's rc into their own 0. The
+ *  powershell aliases are included so the same gate works on Windows, where
+ *  `git push | Select-Object -Last 5` hides the push's status just as
+ *  `| tail -5` does. */
+const CONSUMERS = String.raw`tail|head|grep|egrep|fgrep|sed|awk|cat|less|more|jq|cut|sort|uniq|wc|tee|select-object|select-string|select|sls|findstr|select-object|out-string|out-file|measure-object|measure`;
 
 /** Suppression marker: deliberate pipe, reviewed. */
 export const ESCAPE_MARKER = "ok-piped-git";
@@ -62,10 +112,12 @@ export function classifyShell(command: string): ShellIssue[] {
   // Both the verb and the pipe must live in the SAME segment: a read-only
   // pipe in a later segment must not resurrect an earlier segment's verb.
   if (STATE_CHANGING_GIT.test(bare)) {
+    const pipedTo = new RegExp(
+      String.raw`\bgit\s(?:[^|;&\n]|&(?!&))*\|\s*(?:2>&1\s*)?(?:${CONSUMERS})\b`,
+      "i",
+    );
     const pipesInSameSegment = segsStripped.some(
-      (seg) =>
-        STATE_CHANGING_GIT.test(seg) &&
-        /\bgit\s(?:[^|;&\n]|&(?!&))*\|\s*(?:2>&1\s*)?(?:tail|head|grep|egrep|fgrep|sed|awk|cat|less|more|jq|cut|sort|uniq|wc|tee)\b/.test(seg),
+      (seg) => STATE_CHANGING_GIT.test(seg) && pipedTo.test(seg),
     );
     if (pipesInSameSegment) {
       issues.push({
