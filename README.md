@@ -40,13 +40,16 @@ agent sees before its next turn, not a block), so the command still runs:
 
 ```
 pi-rc-gate WARN (not blocked): this command can produce a false green.
-[pipe-loss] state-changing git verb piped into a consumer (tail/head/grep/…):
-the pipeline exit code is the CONSUMER's, so a failed push/commit/merge reads as
-success. Capture rc first (`git push …; rc=$?`) or drop the pipe.
-Canonical shape: capture rc BEFORE any other statement —
-`git push -q origin main; rc=$?; echo "push rc=$rc"; [ "$rc" -eq 0 ] || { echo FAILED; return 1; }`
+rc-gate [pipe-loss]: state-changing git verb piped into a consumer
+(tail/head/grep/…): the pipeline exit code is the CONSUMER's, so a failed
+push/commit/merge reads as success. Capture rc first (`git push …; rc=$?`) or
+drop the pipe.
+Canonical shape: capture rc BEFORE any other statement — `git push -q origin
+main; rc=$?; echo "push rc=$rc"; [ "$rc" -eq 0 ] || { echo FAILED; return 1; }`
 (escape a deliberate pipe with a trailing `# ok-piped-git` comment)
 ```
+
+(Wrapped here for reading; the steer arrives as one line per paragraph.)
 
 One warn per issue kind per session, so the gate never becomes background noise
 you learn to ignore. Warnings cover the `bash` tool and the `powershell` tool
@@ -71,14 +74,19 @@ and `$?` holds the echo's status.
 | **Late read** | `git <verb> … ; other-command; echo $?` | `$?` belongs to the last intervening command, not the git op. |
 
 Only **state-changing** verbs count — `push`, `commit`, `merge`, `rebase`,
-`fetch`, `pull`, `clone`, `stash` (bare), `apply`, `clean`, `reset`, `checkout`,
-`tag` (creating), … Read-only forms are exempt, because a warn layer only
+`reset`, `checkout`, `switch`, `stash` (bare), `pull`, `tag` (creating),
+`cherry-pick`, `revert`, `apply`, `am`, `worktree add|remove`, `branch -d/-D`,
+`clean`. `fetch` and `clone` are deliberately absent: they leave the branch and
+worktree you are standing on untouched, so a lost exit code there cannot fake a
+green write. Read-only forms are exempt for the same reason — a warn layer only
 survives if it stays quiet where the exit code cannot lie.
 
 ### What is *not* flagged
 
-The same table drives the pipe check, the swallow check, and the linter, so the
-three can never drift apart:
+One verb table drives both the pipe check and the swallow check, so those two
+cannot drift apart. `scripts/rc-gate.sh` expresses the same table in bash (it
+has to run without Node), keeps a "keep in sync" note, and is covered by its own
+test suite against the same cases:
 
 | Read-only form | Why exempt |
 |---|---|
@@ -173,8 +181,9 @@ itself, so `git stash list | head` never warns.
 **It only warned once.** By design: one steer per issue kind per session. Use
 `/new` (or a fresh session) if you want the demonstration again.
 
-**The warn did not appear at all.** Check `RC_GATE_DISABLE` — if it is set to
-anything truthy the layer is off. The script layer is independent.
+**The warn did not appear at all.** Check `RC_GATE_DISABLE` — it must be
+exactly `1` to switch the layer off; any other value (`true`, `yes`, empty)
+leaves the gate on. The script layer is independent of it.
 
 **`rc-gate.sh` printed nothing and exited 2.** That is "no staged shell files"
 or a path that does not exist, not a clean pass. Run it with explicit paths.
