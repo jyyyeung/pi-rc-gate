@@ -1,9 +1,18 @@
 {
   "name": "pi-rc-gate",
   "version": "0.1.1",
-  "type": "module",
+  "description": "Exit-code honesty for coding agents: warns when piped git verbs, || true swallows, or late $? reads would let a failed command be reported as success — plus a static shell lint and a verification-before-claiming skill.",
   "license": "MIT",
-  "description": "Exit-code honesty for coding agents: warns when piped git verbs, || true swallows, or late $? reads would let a failed command be reported as success \u2014 plus a static shell lint and a verification-before-claiming skill.",
+  "type": "module",
+  "files": [
+    "extensions/",
+    "src/",
+    "skills/",
+    "scripts/",
+    "CHANGELOG.md",
+    "README.md",
+    "LICENSE"
+  ],
   "keywords": [
     "pi-package",
     "pi-extension",
@@ -16,7 +25,22 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+ssh://git@github.com/jyyyeung/pi-rc-gate.git"
+    "url": "git+https://github.com/jyyyeung/pi-rc-gate.git"
+  },
+  "homepage": "https://github.com/jyyyeung/pi-rc-gate#readme",
+  "bugs": {
+    "url": "https://github.com/jyyyeung/pi-rc-gate/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=1.3.0"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^1.3.0",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.7.0"
   },
   "pi": {
     "extensions": [
@@ -25,14 +49,6 @@
     "skills": [
       "./skills/rc-gate"
     ]
-  },
-  "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*"
-  },
-  "devDependencies": {
-    "@earendil-works/pi-coding-agent": "^1.3.0",
-    "@types/node": "^24.0.0",
-    "typescript": "^5.7.0"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
