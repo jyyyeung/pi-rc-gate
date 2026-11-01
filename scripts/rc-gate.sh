@@ -13,6 +13,16 @@ set -uo pipefail
 
 GIT_VERB='git[[:space:]].*(push|commit|merge|rebase|reset|checkout|switch|stash|pull|tag|cherry-pick|revert|apply)[[:space:]]'
 CONSUMER='(tail|head|grep|egrep|fgrep|sed|awk|cat|less|more|jq|cut|sort|uniq|wc|tee)([[:space:]]|$)'
+# FR-9: a pipe or swallow pattern must bind in the SAME ; -segment as the
+# git verb — an earlier segment's verb must not be resurrected by a later
+# read-only pipe. Like the TS classifier, splitting is naive w.r.t. nesting:
+# no $()/quote parsing, so a ; inside $( ) splits too (warn-level accuracy,
+# not a parser). Within a segment || and && do not split; only ; (and
+# newlines, one line at a time here) do. Verb-first ordering plus the
+# single-pipe guard [^|]* keep a consumer pipe before the verb and `|| x`
+# from reading as the verb's pipe.
+SEG_PIPE_CONSUMER="$GIT_VERB"'[^|]*\|[[:space:]]*(2>&1[[:space:]]*)?'"$CONSUMER"
+SEG_SWALLOW="$GIT_VERB"'.*\|\|[[:space:]]*(true|:)([[:space:]]|$)'
 
 if [ $# -gt 0 ]; then
   files=("$@")
@@ -30,14 +40,17 @@ for f in "${files[@]}"; do
     case "$text" in
       *ok-piped-git*) continue ;;
     esac
-    if echo "$text" | grep -qE "$GIT_VERB.*\|.*$CONSUMER"; then
-      echo "  ✗ $f:$no pipe-loss: git verb piped — pipeline rc is the consumer's"
-      findings=$((findings+1))
-    fi
-    if echo "$text" | grep -qE "$GIT_VERB.*\|[|][[:space:]]*(true|:)([[:space:]]|$)"; then
-      echo "  ✗ $f:$no swallow: || true after git verb discards failure"
-      findings=$((findings+1))
-    fi
+    IFS=';' read -ra segs <<< "$text"
+    for seg in "${segs[@]}"; do
+      if grep -qE "$SEG_PIPE_CONSUMER" <<< "$seg"; then
+        echo "  ✗ $f:$no pipe-loss: git verb piped — pipeline rc is the consumer's"
+        findings=$((findings+1))
+      fi
+      if grep -qE "$SEG_SWALLOW" <<< "$seg"; then
+        echo "  ✗ $f:$no swallow: || true after git verb discards failure"
+        findings=$((findings+1))
+      fi
+    done
     if echo "$text" | grep -qE '\$\?'; then
       # late-read heuristic: $? on a line whose earlier segment ran a git verb
       if echo "$text" | grep -qE "$GIT_VERB.*;.*[^=]\$\?|\$\?.*;.*echo.*rc"; then
