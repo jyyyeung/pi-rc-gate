@@ -9,9 +9,24 @@
  * this family produces a false-green claim.
  */
 
+/** Read-only `git tag` listing forms (FR-6): bare tag, -l/--list, -n[n],
+ *  --contains/--points-at/--merged/--no-merged (value follows the flag),
+ *  --format=/--sort= (value in the flag), --column, --color — these only
+ *  list refs, so a lost exit code cannot fake a green write. A refname or
+ *  a write flag (-a -s -u -m -F -f -d -D) after `tag` still matches.
+ *  Interpolated as a negative lookahead after the `tag` verb in both
+ *  STATE_CHANGING_GIT and SWALLOW_GIT. */
+const READONLY_TAG_TAIL = String.raw`tag\b(?!\s*(?:$|[|;&])|\s+(?:-l\b|-n\d*\b|--list\b|--contains\b|--points-at\b|--merged\b|--no-merged\b|--column\b|--color\b|--(?:format|sort)=))`;
+
 /** State-changing git verbs whose failure MUST reach the caller. */
-export const STATE_CHANGING_GIT =
-  /\bgit\s+(?:-{1,2}[\w-]+(?:\s+"[^"]*"|\s+'[^']*'|\s+\S+)?\s+)*(?:push\b|commit\b|merge(?!-(?:base|ours|theirs|file))\b|rebase\b|reset\b|checkout\b|switch\b|stash\b|pull\b|tag\b|cherry-pick\b|revert\b|apply\b|am\b|worktree\s+(?:add|remove)\b|branch\s+-\w*[Dd]\b)/;
+export const STATE_CHANGING_GIT = new RegExp(
+  String.raw`\bgit\s+(?:-{1,2}[\w-]+(?:\s+"[^"]*"|\s+'[^']*'|\s+\S+)?\s+)*(?:push\b|commit\b|merge(?!-(?:base|ours|theirs|file))\b|rebase\b|reset\b|checkout\b|switch\b|stash\b|pull\b|${READONLY_TAG_TAIL}|cherry-pick\b|revert\b|apply\b|am\b|worktree\s+(?:add|remove)\b|branch\s+-\w*[Dd]\b)`,
+);
+
+/** `|| true`/`|| :` swallowing one of the state-changing verbs (P2). */
+const SWALLOW_GIT = new RegExp(
+  String.raw`\bgit\s(?:[^|;&\n]|&(?!&))*(?:push|commit|merge|rebase|reset|stash|pull|${READONLY_TAG_TAIL}|cherry-pick|revert|apply)\b(?:[^|;&\n]|&(?!&))*\|\|\s*(?:true\b|:)`,
+);
 
 /** Suppression marker: deliberate pipe, reviewed. */
 export const ESCAPE_MARKER = "ok-piped-git";
@@ -48,8 +63,8 @@ export function classifyShell(command: string): ShellIssue[] {
       });
     }
 
-    // P2 swallow: failure replaced by true.
-    if (/\bgit\s(?:[^|;&\n]|&(?!&))*(?:push|commit|merge|rebase|reset|stash|pull|tag|cherry-pick|revert|apply)\b(?:[^|;&\n]|&(?!&))*\|\|\s*(?:true\b|:)/.test(bare)) {
+    // P2 swallow: failure replaced by true (same read-only tag exemption).
+    if (SWALLOW_GIT.test(bare)) {
       issues.push({
         kind: "swallow",
         detail: "`|| true` after a state-changing git verb discards its failure — the loop/classifier above will report green regardless. Handle the failure or let it propagate.",
